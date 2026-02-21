@@ -1,206 +1,156 @@
-# Cambridge NY Commercial Landscaping AI Modules
+# Cambridge NY Commercial Landscaping Modules
 
-A suite of AI-powered business optimization modules for Cambridge NY's commercial landscaping and plant services company, serving the NYC metropolitan area.
+AI-powered business modules for Cambridge NY commercial landscaping operations in New York City.
 
-## 🏢 Business Overview
+## Overview
 
-Cambridge NY specializes in commercial landscaping and plant services across all five NYC boroughs:
-- Interior plant maintenance and rentals
-- Weekly lobby flower arrangements  
-- Holiday decoration installations
-- Full commercial landscaping projects
-- Specialized plant care for offices, hotels, restaurants
+This directory contains specialized AI modules designed for a commercial landscaping company based in Cambridge, NY, serving high-end commercial clients throughout New York City. Each module addresses critical business functions with intelligent automation and data-driven insights.
 
-## 🧠 AI Modules
+## Modules
 
-### 1. Crew Balancer (`crew_balancer.py`)
-**Smart workforce optimization and scheduling**
+### 🏢 Commercial Operations
 
-Optimizes crew assignments and scheduling to maximize efficiency and minimize travel time across NYC boroughs.
+**crew_balancer.py** - Intelligent Crew Scheduling & Resource Optimization
+- AI-powered crew assignment optimization
+- Multi-constraint scheduling (skills, certifications, travel time)
+- Real-time workload balancing across NYC locations
+- Resource utilization analytics and crew performance tracking
 
-**Key Features:**
-- Analyzes crew skills, certifications, and availability
-- Routes crews efficiently between Manhattan, Brooklyn, Queens, Bronx, and Staten Island
-- Balances workload across team members
-- Factors in travel times, traffic patterns, and borough-specific requirements
-- Handles emergency rescheduling and crew substitutions
-- Integrates with payroll systems for accurate labor cost tracking
+**inventory_optimizer.py** - Smart Supply Chain Management  
+- Predictive inventory management with seasonal demand forecasting
+- Automated reorder point calculations for plants and materials
+- Supplier performance analytics and cost optimization
+- Weather-aware inventory adjustments
 
-**Use Cases:**
-- Daily crew scheduling for plant maintenance routes
-- Holiday decoration installation crew deployment
-- Emergency service response optimization
-- Seasonal workforce scaling (holiday rush periods)
+**pricing_engine.py** - Dynamic Commercial Pricing Calculator
+- Intelligent pricing for 5 service lines: landscaping, holiday decor, plant maintenance, rentals, lobby flowers
+- Real-time cost calculations including materials, labor, travel, and seasonal premiums
+- Professional quote generation with itemized breakdowns
+- Per-plant pricing database with wholesale/retail/rental rates
 
-### 2. Inventory Optimizer (`inventory_optimizer.py`)
-**Intelligent plant and material inventory management**
+## Key Features
 
-Predicts inventory needs and optimizes stock levels for plants, materials, and seasonal items.
+### 🎯 NYC Commercial Focus
+- Optimized for Manhattan, Brooklyn, Queens commercial districts
+- Travel time calculations between Cambridge NY base and client locations
+- NYC-specific regulations and permit tracking
+- Holiday decor with 40% seasonal premiums (Nov-Jan)
 
-**Key Features:**
-- Forecasts plant demand by species, size, and season
-- Tracks plant health cycles and replacement schedules
-- Manages seasonal inventory (holiday decorations, winter plants)
-- Optimizes greenhouse space and plant rotation
-- Predicts material needs for landscaping projects
-- Integrates with supplier networks for automated ordering
+### 💰 Financial Intelligence
+- Dynamic pricing based on market conditions and project complexity
+- Profit margin analysis and budget variance tracking
+- Cost optimization across labor, materials, and transportation
+- Professional quote generation with tax calculations (NYC 8.875%)
 
-**Use Cases:**
-- Maintaining optimal plant inventory levels
-- Planning seasonal decoration purchases
-- Predicting replacement plants for maintenance contracts
-- Coordinating with nurseries and suppliers
-- Managing perishable inventory (flowers, seasonal plants)
+### 🌿 Industry Specialization
+- Commercial plant rental and maintenance programs
+- Weekly lobby flower arrangements (Standard $150, Premium $275, Luxury $450)
+- Holiday decoration installations for corporate clients
+- Interior plant maintenance with bi-weekly service cycles
 
-### 3. Pricing Engine (`pricing_engine.py`) ✅
-**Dynamic pricing calculator for all commercial services**
+## Usage Examples
 
-Generates professional, itemized quotes for all service types with intelligent pricing based on multiple factors.
-
-**Key Features:**
-- **Service Types:**
-  - Interior plant maintenance ($200-800/month)
-  - Plant rentals (small $35/month, premium $125/month)
-  - Holiday decor installations (30-50% seasonal markup Nov-Jan)
-  - Weekly lobby flowers ($150-500/week)
-  - Commercial landscaping projects
-
-- **Pricing Factors:**
-  - Plant costs and material expenses
-  - Labor hours with crew rates ($45-65/hr based on tier)
-  - Travel time between NYC boroughs
-  - Seasonal premiums for holiday work
-  - Rental vs purchase options
-  - Service tier multipliers (Bronze/Silver/Gold)
-
-- **Professional Quote Generation:**
-  - Itemized breakdowns with subtotals
-  - NYC sales tax calculation (8.875%)
-  - Dynamic delivery fees by borough
-  - Professional formatting for client presentation
-  - Quote validity periods
-
-**Example Pricing:**
+### Pricing Engine
 ```python
-from pricing_engine import PricingEngine, ServiceTier, Borough
+from cambridge.pricing_engine import CambridgePricingEngine, ServiceType, PricingTier
 
-engine = PricingEngine(Borough.MANHATTAN)
+engine = CambridgePricingEngine()
 
-# Monthly plant maintenance for 25 plants
-quote = engine.calculate_interior_plant_maintenance(
-    plant_count=25,
-    service_tier=ServiceTier.SILVER,
-    target_borough=Borough.BROOKLYN,
-    monthly_visits=4
+# Calculate plant rental quote
+plant_requests = {
+    'fiddle_leaf_large': 2,
+    'snake_plant_large': 4,
+    'pothos_medium': 6
+}
+
+rental_items = engine.calculate_plant_rental_quote(
+    plant_requests=plant_requests,
+    weeks_duration=12,
+    distance_miles=25.0,
+    maintenance_included=True
 )
 
-print(engine.generate_quote_report(quote, "ABC Corporation"))
-```
-
-## 🗺️ NYC Service Coverage
-
-**Primary Boroughs:**
-- **Manhattan**: Premium tier, shortest travel times
-- **Brooklyn**: High-volume commercial district
-- **Queens**: Growing corporate presence
-- **Bronx**: Emerging commercial market  
-- **Staten Island**: Specialized service area
-
-**Travel Time Matrix:**
-- Manhattan ↔ Brooklyn: 45 minutes
-- Manhattan ↔ Queens: 60 minutes
-- Manhattan ↔ Bronx: 30 minutes
-- Manhattan ↔ Staten Island: 90 minutes
-
-## 🎯 Service Tiers
-
-**Bronze Tier** ($45/hr crew rate)
-- Basic service level
-- Standard plant varieties
-- Regular maintenance schedules
-
-**Silver Tier** ($55/hr crew rate)
-- Enhanced service with premium plants
-- Faster response times
-- Seasonal adjustments
-
-**Gold Tier** ($65/hr crew rate)
-- Premium service with exotic plants
-- Priority scheduling
-- Custom design consultations
-
-## 🏗️ Technical Architecture
-
-**Built with Python 3.8+**
-- Object-oriented design for modularity
-- Enum-based type safety for service categories
-- Dataclass structures for clean data handling
-- Extensible pricing algorithms
-- Integration-ready APIs
-
-**Dependencies:**
-```python
-from datetime import datetime, date
-from enum import Enum
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
-import math
-```
-
-## 📊 Business Intelligence
-
-Each module generates analytics and insights:
-
-- **Crew utilization rates** and efficiency metrics
-- **Inventory turnover** and seasonal demand patterns  
-- **Pricing optimization** recommendations
-- **Borough-specific** performance analytics
-- **Seasonal trend** analysis for capacity planning
-
-## 🚀 Getting Started
-
-```python
-# Initialize the pricing engine
-from cambridge.pricing_engine import PricingEngine, ServiceTier, Borough
-
-engine = PricingEngine(Borough.MANHATTAN)
-
-# Calculate a quote
-quote = engine.calculate_weekly_lobby_flowers(
-    service_tier=ServiceTier.GOLD,
-    target_borough=Borough.MANHATTAN,
-    weeks=52
+quote = engine.generate_quote(
+    client_name="Madison Square Garden Corp",
+    project_name="Executive Offices Plant Rental",
+    service_type=ServiceType.PLANT_RENTALS,
+    line_items=rental_items
 )
 
-# Generate professional quote
-report = engine.generate_quote_report(quote, "Client Name", "Project Name")
-print(report)
+print(engine.format_quote(quote))
 ```
 
-## 📈 ROI Impact
+### Crew Balancer
+```python
+from cambridge.crew_balancer import CrewBalancer
 
-**Operational Efficiency:**
-- 25% reduction in travel time through optimized routing
-- 15% improvement in crew utilization rates
-- 30% reduction in inventory carrying costs
+balancer = CrewBalancer()
 
-**Revenue Optimization:**
-- Dynamic pricing increases margins by 12-18%
-- Seasonal premium capture during peak periods
-- Accurate quotes reduce revision cycles by 40%
+# Optimize crew assignments for the day
+assignments = balancer.optimize_daily_assignments(
+    date=date.today(),
+    priority_clients=["Goldman Sachs", "One World Trade Center"]
+)
 
-**Customer Experience:**
-- Professional quote generation in under 5 minutes
-- Transparent, itemized pricing builds trust
-- Faster response times for service requests
+print(f"Optimized assignments for {len(assignments)} projects")
+```
 
-## 📞 Contact & Support
+### Inventory Optimizer
+```python
+from cambridge.inventory_optimizer import InventoryOptimizer
 
-Cambridge NY Commercial Landscaping
-- Location: Cambridge, NY
-- Service Area: All NYC Boroughs
-- Specialization: Commercial plant services and landscaping
+optimizer = InventoryOptimizer()
 
----
+# Check reorder requirements
+reorder_items = optimizer.check_reorder_points()
+print(f"Need to reorder {len(reorder_items)} items")
 
-*Powered by AI optimization for maximum efficiency and profitability in the competitive NYC commercial landscaping market.*
+# Seasonal demand forecast
+forecast = optimizer.forecast_seasonal_demand(months_ahead=3)
+```
+
+## Integration
+
+These modules integrate with:
+- **Project management systems** for scheduling and resource allocation
+- **Financial systems** for pricing and invoicing
+- **Inventory management** for supply chain optimization
+- **Customer relationship management** for client communications
+
+## Data Models
+
+### Plant Catalog
+- Botanical names and common names
+- Wholesale costs and retail pricing
+- Weekly rental rates and maintenance requirements
+- Common usage scenarios (lobby, office, low-light)
+
+### Service Categories
+- Commercial landscaping design and installation
+- Holiday decoration projects (seasonal premium pricing)
+- Interior plant maintenance programs
+- Plant rental services (short-term and long-term)
+- Weekly lobby flower arrangements
+
+### Pricing Tiers
+- **Standard**: $150/week lobby arrangements
+- **Premium**: $275/week with seasonal rotation
+- **Luxury**: $450/week with exotic flowers and premium service
+
+## Technical Requirements
+
+- Python 3.8+
+- Dependencies: `dataclasses`, `decimal`, `datetime`, `enum`, `typing`
+- Optional: `numpy`, `pandas` for advanced analytics
+
+## Cambridge NY Context
+
+**Location**: Cambridge, Washington County, NY (45 minutes north of Albany)
+**Service Area**: New York City commercial district
+**Specialization**: High-end commercial landscaping and plant services
+**Peak Season**: November-January (holiday decorations with 40% premium)
+**Target Clients**: Fortune 500 companies, major real estate developments, prestigious office buildings
+
+## Support
+
+For questions or issues with these modules, contact the Cambridge NY AI development team.
