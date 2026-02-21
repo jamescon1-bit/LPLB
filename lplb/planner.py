@@ -63,8 +63,31 @@ class Planner:
         :param ep_size: Total number of EP ranks. Defaults to `group.size()`. Must be provided if `group` is None.
         :param group: EP communication group. Defaults to None, meaning no workload reduction is performed.
         """
-        self.r2o = redundant_to_original.int().cuda()
-        self.o2r = self.r2o.argsort(dim=0).int().contiguous()
+        # C5: Add comprehensive input validation
+        if not isinstance(redundant_to_original, torch.Tensor):
+            raise ValueError("redundant_to_original must be a torch.Tensor")
+        if redundant_to_original.dim() != 2:
+            raise ValueError(f"redundant_to_original must be 2D, got {redundant_to_original.dim()}D")
+        if redundant_to_original.shape[0] <= 0 or redundant_to_original.shape[1] <= 0:
+            raise ValueError(f"redundant_to_original shape must be positive, got {redundant_to_original.shape}")
+        if redundant_to_original.max() >= n_logical_routed_experts:
+            raise ValueError(f"redundant_to_original contains indices >= n_logical_routed_experts ({n_logical_routed_experts})")
+        if redundant_to_original.min() < 0:
+            raise ValueError("redundant_to_original contains negative indices")
+        
+        # Validate expert counts to prevent integer overflow
+        if n_routed_experts <= 0 or n_routed_experts > 1e7:  # Reasonable upper limit
+            raise ValueError(f"n_routed_experts must be positive and reasonable, got {n_routed_experts}")
+        if n_logical_routed_experts <= 0 or n_logical_routed_experts > 1e7:
+            raise ValueError(f"n_logical_routed_experts must be positive and reasonable, got {n_logical_routed_experts}")
+        if n_routed_experts < n_logical_routed_experts:
+            raise ValueError(f"n_routed_experts ({n_routed_experts}) must be >= n_logical_routed_experts ({n_logical_routed_experts})")
+        
+        # Use int64 to prevent overflow, validate before converting
+        if redundant_to_original.dtype.is_floating_point:
+            redundant_to_original = redundant_to_original.long()
+        self.r2o = redundant_to_original.long().cuda()  # Use long instead of int to prevent overflow
+        self.o2r = self.r2o.argsort(dim=0).long().contiguous()  # Use long instead of int
         self.group_size, self.num_redundants = self.r2o.shape[0], self.r2o.shape[1]
 
         self.n_routed_experts = n_routed_experts
@@ -191,7 +214,26 @@ class Planner:
         :return: A tuple where the first element is the count result (shape: (n_logical_routed_experts,)),
                  and the second is an intermediate result (shape: (n_sms, n_logical_routed_experts)).
         """
-        return self.solver.count_idx(idx, n_sms, 256)
+        # M4: Add input sanitization
+        if not isinstance(idx, torch.Tensor):
+            raise ValueError("idx must be a torch.Tensor")
+        if idx.dtype not in [torch.int32, torch.int64, torch.long]:
+            raise ValueError(f"idx must be integer tensor, got {idx.dtype}")
+        if n_sms <= 0 or n_sms > 512:  # Reasonable GPU SM limit
+            raise ValueError(f"n_sms must be positive and reasonable (1-512), got {n_sms}")
+        
+        # Validate idx values are within expected range
+        if idx.numel() > 0:  # Only check if tensor is not empty
+            idx_min, idx_max = idx.min().item(), idx.max().item()
+            if idx_min < -1:
+                raise ValueError(f"idx contains values < -1: min={idx_min}")
+            if idx_max >= self.n_logical_routed_experts:
+                raise ValueError(f"idx contains values >= n_logical_routed_experts ({self.n_logical_routed_experts}): max={idx_max}")
+        
+        try:
+            return self.solver.count_idx(idx, n_sms, 256)
+        except Exception as e:
+            raise RuntimeError(f"CUDA kernel count_idx failed: {e}")
 
     def solve_probs(
         self,
@@ -206,15 +248,51 @@ class Planner:
         :param avail_counter: Feasible solution counter (numel = 1).
         :return: Load distribution ratio (shape: (num_redundants, combined_redundant_experts)).
         """
-        workload = workload.view(
-            self.n_group,
-            self.group_size,
-            self.n_local_logical_routed_experts,
-        )
-        if self.ep_group is not None and not self.deep_ep_initialized:
-            workload = workload.clone()
-            torch.distributed.all_reduce(workload, group=self.ep_group)
-        return self.solver.solve(workload, self.r2o, self.phy2log, avail_counter)
+        # H9: Add comprehensive error handling for CUDA operations
+        try:
+            # Input validation
+            if not isinstance(workload, torch.Tensor):
+                raise ValueError("workload must be a torch.Tensor")
+            if not isinstance(avail_counter, torch.Tensor):
+                raise ValueError("avail_counter must be a torch.Tensor")
+            if workload.numel() == 0:
+                raise ValueError("workload tensor is empty")
+            if avail_counter.numel() != 1:
+                raise ValueError(f"avail_counter must have exactly 1 element, got {avail_counter.numel()}")
+            
+            # Check for NaN/Inf values that could cause solver issues
+            if torch.isnan(workload).any():
+                raise ValueError("workload contains NaN values")
+            if torch.isinf(workload).any():
+                raise ValueError("workload contains Inf values")
+            
+            workload = workload.view(
+                self.n_group,
+                self.group_size,
+                self.n_local_logical_routed_experts,
+            )
+            
+            if self.ep_group is not None and not self.deep_ep_initialized:
+                workload = workload.clone()
+                try:
+                    torch.distributed.all_reduce(workload, group=self.ep_group)
+                except Exception as e:
+                    raise RuntimeError(f"Distributed all_reduce failed: {e}")
+            
+            result = self.solver.solve(workload, self.r2o, self.phy2log, avail_counter)
+            
+            # Validate solver output
+            if torch.isnan(result).any():
+                raise RuntimeError("LP solver returned NaN values - solver may have failed")
+            if torch.isinf(result).any():
+                raise RuntimeError("LP solver returned Inf values - solver may have failed")
+                
+            return result
+            
+        except torch.cuda.OutOfMemoryError as e:
+            raise RuntimeError(f"CUDA out of memory in solve_probs: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Error in solve_probs: {e}")
 
     def weighted_select_target(
         self,

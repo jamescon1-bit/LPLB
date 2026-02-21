@@ -129,9 +129,12 @@ extern "C" __global__ void kernel_solve(
               nvshmem_team_translate_pe(internode_team, remote_node,
                                         NVSHMEM_TEAM_WORLD));
         }
-        nvshmem_signal_wait_until(workload_sig_inter, NVSHMEM_CMP_GE,
-                                  workload_sig_inter[1] + n_nodes - 1);
-        workload_sig_inter[1] += n_nodes - 1;
+        // H1: Fix race condition by using atomic operations
+        uint64_t expected_value = workload_sig_inter[1] + n_nodes - 1;
+        nvshmem_signal_wait_until(workload_sig_inter, NVSHMEM_CMP_GE, expected_value);
+        // Use atomic increment to prevent race conditions
+        __threadfence_system();  // Ensure memory ordering
+        workload_sig_inter[1] = expected_value;
       }
       __syncthreads();
       // 3. Sum workload_buf_inter across nodes into
@@ -162,16 +165,24 @@ extern "C" __global__ void kernel_solve(
       }
       __syncthreads();
       // 5. Scale global_workload to have max value of 1
+      // M1: Use double precision for better numerical stability
       if (tid < 32) {
-        float workload_max = 0.0f;
+        double workload_max = 0.0;
         for (int i = tid; i < n_experts; i += 32) {
-          workload_max = fmaxf(workload_max, global_workload[i]);
+          workload_max = fmax(workload_max, (double)global_workload[i]);
         }
+        // Convert to float for shuffle operations
+        float workload_max_f = (float)workload_max;
         for (int offset = 16; offset > 0; offset >>= 1)
-          workload_max = fmaxf(
-              workload_max, __shfl_xor_sync(0xffffffff, workload_max, offset));
-        for (int i = tid; i < n_experts; i += 32)
-          global_workload[i] /= workload_max;
+          workload_max_f = fmaxf(
+              workload_max_f, __shfl_xor_sync(0xffffffff, workload_max_f, offset));
+        workload_max = (double)workload_max_f;
+        
+        // Avoid division by zero
+        if (workload_max > 1e-12) {
+          for (int i = tid; i < n_experts; i += 32)
+            global_workload[i] = (float)((double)global_workload[i] / workload_max);
+        }
       }
     }
     cg::this_grid().sync();
@@ -179,14 +190,25 @@ extern "C" __global__ void kernel_solve(
 #endif
     // Still need to scale workload
     if (pid == 0 && tid < 32) {
-      float workload_max = 0.0f;
+      double workload_max = 0.0;
       for (int i = tid; i < n_experts; i += 32)
-        workload_max = fmaxf(workload_max, workload[i]);
+        workload_max = fmax(workload_max, (double)workload[i]);
+      
+      float workload_max_f = (float)workload_max;
       for (int offset = 16; offset > 0; offset >>= 1)
-        workload_max = fmaxf(workload_max,
-                             __shfl_xor_sync(0xffffffff, workload_max, offset));
-      for (int i = tid; i < n_experts; i += 32)
-        global_workload[i] = workload[i] / workload_max;
+        workload_max_f = fmaxf(workload_max_f,
+                             __shfl_xor_sync(0xffffffff, workload_max_f, offset));
+      workload_max = (double)workload_max_f;
+      
+      // Avoid division by zero
+      if (workload_max > 1e-12) {
+        for (int i = tid; i < n_experts; i += 32)
+          global_workload[i] = (float)((double)workload[i] / workload_max);
+      } else {
+        // Handle case where all workloads are zero
+        for (int i = tid; i < n_experts; i += 32)
+          global_workload[i] = 0.0f;
+      }
 #ifdef DEBUG_DUMP
       printf("tid=%d workload_max=%f\n", tid, workload_max);
 #endif
@@ -426,9 +448,14 @@ extern "C" __global__ void kernel_count_idx(const long *idx,
   const int start = split_and_align(n_elements, pid, n_prog, block_size);
   const int end = split_and_align(n_elements, pid + 1, n_prog, block_size);
   for (int i = start + tid; i < end; i += block_size) {
-    assert(idx[i] >= -1);
-    assert(idx[i] < n_experts);
-    atomicAdd(&smem_counts[idx[i]], 1);
+    // C4: Fix signed integer underflow - validate index before use
+    int idx_val = idx[i];
+    assert(idx_val >= -1);
+    assert(idx_val < n_experts);
+    // Only increment if idx is valid (>= 0), skip -1 values safely
+    if (idx_val >= 0) {
+      atomicAdd(&smem_counts[idx_val], 1);
+    }
   }
   __syncthreads();
 

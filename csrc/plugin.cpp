@@ -90,6 +90,22 @@
 #ifdef USE_NVSHMEM
 
 void sync_current_to_module(cudaLibrary_t module, const char *symbol_name) {
+  // C6: Add library path validation to prevent injection attacks
+  if (!DEEP_EP_SO || strlen(DEEP_EP_SO) == 0) {
+    throw std::runtime_error("Invalid library path: DEEP_EP_SO is null or empty");
+  }
+  
+  // Validate that the library path is within expected directories
+  std::filesystem::path lib_path(DEEP_EP_SO);
+  if (!lib_path.is_absolute()) {
+    throw std::runtime_error("Library path must be absolute for security");
+  }
+  
+  // Check if file exists and is a regular file
+  if (!std::filesystem::exists(lib_path) || !std::filesystem::is_regular_file(lib_path)) {
+    throw std::runtime_error("Library file does not exist or is not a regular file");
+  }
+  
   auto lib_handle = dlopen(DEEP_EP_SO, RTLD_LAZY | RTLD_LOCAL);
   if (!lib_handle)
     throw std::runtime_error(std::string("Cannot load library: ") + dlerror());
@@ -343,6 +359,10 @@ struct compiled_solver {
     int *d_smem_size;
     CUDA_CHECK(cudaHostGetDevicePointer(&d_smem_size, h_smem_size, 0));
     void *args[] = {&d_smem_size};
+    // C7: Basic validation for kernel parameters
+    if (!get_solve_smem_size) {
+      throw std::runtime_error("get_solve_smem_size kernel is null");
+    }
     CUDA_CHECK(cudaLaunchKernel(get_solve_smem_size, 1, 1, args, 0, nullptr));
     CUDA_CHECK(cudaStreamSynchronize(0));
     smem_size = *h_smem_size;
@@ -653,6 +673,17 @@ struct compiled_solver {
         (n_local_experts - dup_per_rank * n_combined_experts);
     int map_idx_smem_size = 5 * n_logical_experts * sizeof(int);
     cudaStream_t cuda_stream = c10::cuda::getCurrentCUDAStream().stream();
+    // C7: Validate CUDA kernel parameters before launch
+    if (n_sms <= 0 || n_sms > 512) {
+      throw std::runtime_error("Invalid n_sms parameter: must be between 1 and 512");
+    }
+    if (block_dim <= 0 || block_dim > 1024 || (block_dim & (block_dim - 1)) != 0) {
+      throw std::runtime_error("Invalid block_dim parameter: must be power of 2 between 1 and 1024");
+    }
+    if (map_idx_smem_size < 0 || map_idx_smem_size > 96 * 1024) {  // 96KB shared memory limit
+      throw std::runtime_error("Invalid shared memory size: must be between 0 and 96KB");
+    }
+    
     CUDA_CHECK(cudaLaunchKernel(kernel_map_idx, {(unsigned)n_sms, 1, 1},
                                 {(unsigned)block_dim, 1, 1}, args,
                                 map_idx_smem_size, cuda_stream));

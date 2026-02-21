@@ -34,10 +34,11 @@ def balanced_packing(weight: torch.Tensor, num_packs: int) -> tuple[torch.Tensor
         pack_weights = [0] * num_packs
         pack_items = [0] * num_packs
         for group in indices[i]:
-            pack = min(
-                (i for i in range(num_packs) if pack_items[i] < groups_per_pack),
-                key=pack_weights.__getitem__,
-            )
+            # M2: Handle case when all packs are full
+            available_packs = [i for i in range(num_packs) if pack_items[i] < groups_per_pack]
+            if not available_packs:
+                raise RuntimeError(f"All packs are full, cannot assign group {group}")
+            pack = min(available_packs, key=pack_weights.__getitem__)
             assert pack_items[pack] < groups_per_pack
             pack_index[i, group] = pack
             rank_in_pack[i, group] = pack_items[pack]
@@ -70,7 +71,11 @@ def replicate_experts(
     logcnt = torch.ones(n, num_log, dtype=torch.int64, device=device)
     arangen = torch.arange(n, dtype=torch.int64, device=device)
     for i in range(num_log, num_phy):
-        redundant_indices = (weight / logcnt).max(dim=-1).indices
+        # C2: Fix division by zero when logcnt contains zero
+        # Add small epsilon to prevent division by zero
+        epsilon = 1e-12
+        safe_logcnt = torch.clamp(logcnt, min=epsilon)
+        redundant_indices = (weight / safe_logcnt).max(dim=-1).indices
         phy2log[:, i] = redundant_indices
         rank[:, i] = logcnt[arangen, redundant_indices]
         logcnt[arangen, redundant_indices] += 1
