@@ -138,7 +138,16 @@ class Planner:
     def update_redundancy_mapping(
         self, workload: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        device = 'cuda'
+        # Use workload's device if provided, otherwise default to cuda
+        if workload is not None:
+            device = workload.device
+            # Ensure workload is on CUDA for proper processing
+            if device.type != 'cuda':
+                workload = workload.cuda()
+                device = workload.device
+        else:
+            device = 'cuda'
+        
         # "nored": No redundancy. Run EPLB without redundancy.
         if workload is None:
             nored_phy2log = torch.arange(
@@ -189,7 +198,10 @@ class Planner:
         # Transpose phy2log before inserting into log2phy to ensure original experts precede copies.
         for phy_local, logs in enumerate(phy2log.reshape(self.ep_size, -1).T):
             for phy_ep_rank, log in enumerate(logs):
-                log2phy[int(log)].append(phy_ep_rank * self.n_local_routed_experts + phy_local)
+                log_idx = int(log)
+                # Critical bounds check to prevent array index out of bounds
+                assert 0 <= log_idx < len(log2phy), f"Logical expert index {log_idx} out of bounds [0, {len(log2phy)})"
+                log2phy[log_idx].append(phy_ep_rank * self.n_local_routed_experts + phy_local)
 
         logcnt = torch.tensor([len(x) for x in log2phy], dtype=torch.int32, device=device)
         max_logcnt = int(logcnt.max())
@@ -274,8 +286,14 @@ class Planner:
             
             if self.ep_group is not None and not self.deep_ep_initialized:
                 workload = workload.clone()
+                # Ensure device synchronization before distributed operation to prevent races
+                if workload.is_cuda:
+                    torch.cuda.synchronize(workload.device)
                 try:
                     torch.distributed.all_reduce(workload, group=self.ep_group)
+                    # Synchronize after distributed operation to ensure completion
+                    if workload.is_cuda:
+                        torch.cuda.synchronize(workload.device)
                 except Exception as e:
                     raise RuntimeError(f"Distributed all_reduce failed: {e}")
             

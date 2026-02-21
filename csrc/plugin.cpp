@@ -109,14 +109,30 @@ void sync_current_to_module(cudaLibrary_t module, const char *symbol_name) {
   auto lib_handle = dlopen(DEEP_EP_SO, RTLD_LAZY | RTLD_LOCAL);
   if (!lib_handle)
     throw std::runtime_error(std::string("Cannot load library: ") + dlerror());
+  
+  // RAII wrapper to ensure library handle is closed in exception paths
+  auto lib_guard = [lib_handle]() { 
+    if (lib_handle) dlclose(lib_handle); 
+  };
+  
   dlerror(); // Clear any existing error
   const void *symbol = dlsym(lib_handle, symbol_name);
+  
+  try {
   void *devPtr_A;
   CUDA_CHECK(cudaGetSymbolAddress(&devPtr_A, symbol));
   void *devPtr_B;
-  size_t size_B;
-  CUDA_CHECK(cudaLibraryGetGlobal(&devPtr_B, &size_B, module, symbol_name));
-  CUDA_CHECK(cudaMemcpy(devPtr_B, devPtr_A, size_B, cudaMemcpyDeviceToDevice));
+    size_t size_B;
+    CUDA_CHECK(cudaLibraryGetGlobal(&devPtr_B, &size_B, module, symbol_name));
+    CUDA_CHECK(cudaMemcpy(devPtr_B, devPtr_A, size_B, cudaMemcpyDeviceToDevice));
+  } catch (...) {
+    // Ensure library handle is closed in case of exception
+    lib_guard();
+    throw; // Re-throw the exception
+  }
+  
+  // Normal cleanup - close library handle
+  lib_guard();
 }
 
 #endif
@@ -366,6 +382,12 @@ struct compiled_solver {
     CUDA_CHECK(cudaLaunchKernel(get_solve_smem_size, 1, 1, args, 0, nullptr));
     CUDA_CHECK(cudaStreamSynchronize(0));
     smem_size = *h_smem_size;
+    
+    // Validate shared memory allocation to prevent GPU crashes
+    if (smem_size < 0 || smem_size > 164 * 1024) {  // Max shared memory per block on modern GPUs
+      throw std::runtime_error("Invalid shared memory size for solver kernel: must be between 0 and 164KB");
+    }
+    
     CUDA_CHECK(cudaKernelSetAttributeForDevice(
         kernel_solve, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size,
         c10::cuda::current_device()));
